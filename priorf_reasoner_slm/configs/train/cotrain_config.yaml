@@ -1,0 +1,47 @@
+# Stage 2 Co-Training Configuration
+# Joint generation + classification + distillation
+
+output_dir: outputs/cotrain
+learning_rate: 5.0e-5
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+num_train_epochs: 3
+warmup_ratio: 0.1
+logging_steps: 10
+save_steps: 500
+save_total_limit: 2
+fp16: false
+bf16: true
+lr_scheduler_type: cosine
+report_to:
+  - tensorboard
+remove_unused_columns: false
+max_seq_length: 2048
+
+# Co-training loss weights
+lambda_cls: 0.1
+lambda_distill: 0.1
+distill_temp: 2.0
+
+# Classification head
+cls_head:
+  hidden_dim: 2048
+  dropout: 0.1
+
+# LoRA (inherited from Stage 1)
+lora:
+  r: 16
+  lora_alpha: 32
+  # Qwen3-4B-Instruct-2507 exposes standard attention projection modules.
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+  lora_dropout: 0.05
+  bias: none
+  task_type: CAUSAL_LM
+
+# Model
+model_name: Qwen/Qwen3-4B
+stage1_adapter_path: outputs/sft/final_adapter
