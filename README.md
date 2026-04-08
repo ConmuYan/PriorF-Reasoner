@@ -2,7 +2,7 @@
 
 # PriorF-Reasoner
 
-**Prior-guided LLM Reasoner for Graph Fraud Detection**
+**用于图欺诈检测的先验引导 LLM 推理器**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.5+-ee4c2c.svg)](https://pytorch.org/)
@@ -13,50 +13,50 @@
 
 ---
 
-## What is PriorF-Reasoner?
+## 什么是 PriorF-Reasoner？
 
-PriorF-Reasoner trains a small LLM (Qwen3-4B) as a **student** to perform generative reasoning for graph fraud detection, using PriorF-GNN as a **teacher** and structured Evidence Cards as the knowledge bridge.
+PriorF-Reasoner 使用一个小型 LLM（Qwen3-4B）作为**学生模型**，在图欺诈检测任务上进行生成式推理；以 PriorF-GNN 作为**教师模型**，并通过结构化 Evidence Card 作为知识桥梁。
 
-> Core idea: let the GNN do what it's good at (graph structure modeling), let the LLM do what it's good at (reasoning and explanation). They are teacher and student, not competitors.
+> 核心思想：让 GNN 做它擅长的事（图结构建模），让 LLM 做它擅长的事（推理与解释）。二者是师生关系，而不是竞争关系。
 
-Each dataset (Amazon, YelpChi) is trained **independently** — no cross-dataset merge. Each has its own relation schema:
-- Amazon: UPU, USU, UVU
-- YelpChi: RUR, RTR, RSR
+每个数据集（Amazon、YelpChi）都**独立训练**——不进行跨数据集合并。每个数据集都有自己的关系模式：
+- Amazon：UPU、USU、UVU
+- YelpChi：RUR、RTR、RSR
 
 ---
 
-## Pipeline Overview
+## 流程总览
 
 ```
 datasets/Amazon.mat
-       │
-       ▼
-[Step 0] Data Loading & Teacher Export (offline, already done)
+        │
+        ▼
+[步骤 0] 数据加载与教师导出（离线，已完成）
        │
        ▼
 assets/teacher_exports/amazon_{train,test}_evidence.parquet
   (per-node: teacher_prob, hsd, asda_switch, branch_gap, disc_level_*, ...)
-       │
-       ▼
-[Step 1] Evidence Card + SFT Dataset Construction (automatic)
+        │
+        ▼
+[步骤 1] Evidence Card + SFT 数据集构建（自动）
        │
        ▼
 HuggingFace Dataset (prompt=card JSON, completion=M3 JSON)
-       │
-       ▼
-[Step 2] Stage 1: SFT Training (L_gen only, Qwen3-4B + LoRA)
+        │
+        ▼
+[步骤 2] 阶段 1：SFT 训练（仅 L_gen，Qwen3-4B + LoRA）
        │
        ▼
 outputs/formal_amazon/sft/final_adapter/  (LoRA weights)
-       │
-       ▼
-[Step 3] Stage 2: CoTrain (L_gen + L_cls + L_distill)
+        │
+        ▼
+[步骤 3] 阶段 2：CoTrain（L_gen + L_cls + L_distill）
        │
        ▼
 outputs/formal_amazon/cotrain/final_cotrain/  (LoRA + cls_head.pt)
-       │
-       ▼
-[Step 4] Evaluation (gen_only / head_only / fusion / faithfulness)
+        │
+        ▼
+[步骤 4] 评估（gen_only / head_only / fusion / faithfulness）
        │
        ▼
 outputs/formal_amazon/eval/{gen_eval,head_eval,faithfulness}.json
@@ -64,11 +64,11 @@ outputs/formal_amazon/eval/{gen_eval,head_eval,faithfulness}.json
 
 ---
 
-## Pipeline Details
+## 流程细节
 
-### Step 0: Data Loading & Teacher Export (offline)
+### 步骤 0：数据加载与教师导出（离线）
 
-Already completed. Raw `.mat` files are loaded by `mat_loader.py`, split 70/10/20 by `split_manager.py`, then PriorF-GNN runs forward with hooks (`export_hooks.py`) to extract per-node evidence. The output is a flat parquet file with ~29 columns per node.
+已完成。原始 `.mat` 文件由 `mat_loader.py` 加载，使用 `split_manager.py` 按 70/10/20 划分，然后 PriorF-GNN 通过 hook（`export_hooks.py`）前向运行，提取每个节点的证据。输出是一个扁平的 parquet 文件，每个节点约 29 列。
 
 ```
 Input:  datasets/Amazon.mat  (CARE-GNN benchmark format)
@@ -82,16 +82,16 @@ Columns: node_id, dataset, split, label,
          suspicious_neighbor_ratio, topk_neighbors, ...
 ```
 
-### Step 1: Evidence Card Construction (automatic, per training run)
+### 步骤 1：Evidence Card 构建（自动，每次训练运行）
 
-For each node row, the pipeline:
+对于每一行节点，流程如下：
 
-1. **`feature_extractors.py`** — `discover_row_relations()` detects which relation columns are non-null for this row's dataset (e.g. Amazon gets UPU/USU/UVU, YelpChi gets RUR/RTR/RSR)
-2. **`serializer.py`** — converts the flat row into a nested `EvidenceCard` Pydantic model
-3. **`rationale_templates.py`** — rule-based template generates the M3 prediction output (no external API)
-4. **`dataset_builder.py`** — packages into `{"prompt": card_json, "completion": m3_json}` samples
+1. **`feature_extractors.py`** —— `discover_row_relations()` 检测该数据集这一行中哪些关系列非空（例如 Amazon 使用 UPU/USU/UVU，YelpChi 使用 RUR/RTR/RSR）
+2. **`serializer.py`** —— 将扁平行转换为嵌套的 `EvidenceCard` Pydantic 模型
+3. **`rationale_templates.py`** —— 基于规则的模板生成 M3 预测输出（无外部 API）
+4. **`dataset_builder.py`** —— 封装为 `{"prompt": card_json, "completion": m3_json}` 样本
 
-**Evidence Card example (Amazon):**
+**Evidence Card 示例（Amazon）：**
 ```json
 {
   "dataset": "amazon",
@@ -118,7 +118,7 @@ For each node row, the pipeline:
 }
 ```
 
-**M3 output the student must generate:**
+**学生模型必须生成的 M3 输出：**
 ```json
 {
   "label": "fraud",
@@ -133,7 +133,7 @@ For each node row, the pipeline:
 }
 ```
 
-### Step 2: Stage 1 — SFT Training
+### 步骤 2：阶段 1 —— SFT 训练
 
 ```
 Input:  HF Dataset (e.g. 11,944 samples for Amazon)
@@ -146,9 +146,9 @@ Loss:   L_gen only (cross-entropy on completion tokens; prompt tokens masked to 
 Output: outputs/formal_<dataset>/sft/final_adapter/
 ```
 
-SFT uses TRL's `SFTTrainer` with `DataCollatorForLanguageModeling(completion_only_loss=True)`. The loss only applies to the completion (M3 JSON) tokens, not the evidence card prompt.
+SFT 使用 TRL 的 `SFTTrainer` 和 `DataCollatorForLanguageModeling(completion_only_loss=True)`。损失只作用于 completion（M3 JSON）token，而不作用于 evidence card prompt。
 
-### Step 3: Stage 2 — CoTrain
+### 步骤 3：阶段 2 —— CoTrain
 
 ```
 Input:  Same teacher parquet + Stage 1 LoRA adapter
@@ -157,92 +157,92 @@ Config: LR=5e-5, 3 epochs, batch=4, grad_accum=4
 Loss:   L = L_gen + 0.1 * L_cls + 0.1 * L_distill
 ```
 
-Each sample carries 4 tensors:
+每个样本包含 4 个张量：
 - `input_ids` / `labels` — tokenized prompt+completion (prompt masked to -100)
 - `teacher_probs` — float, from the teacher's `teacher_prob` column
 - `cls_targets` — int, ground-truth label (0/1)
 
-**Forward pass:**
-1. LLM forward produces `lm_logits` for generation loss
-2. Last valid token's hidden state feeds into `cls_head` producing `cls_logits`
-3. Tri-loss combines all three
+**前向过程：**
+1. LLM 前向输出 `lm_logits`，用于生成损失
+2. 最后一个有效 token 的 hidden state 输入 `cls_head`，得到 `cls_logits`
+3. 三重损失合并这三部分
 
-**Loss components:**
-- `L_gen`: cross-entropy on completion tokens (same as SFT)
-- `L_cls`: BCEWithLogits on cls_logits vs cls_targets
-- `L_distill`: KL divergence between student score and teacher_prob (temperature=2.0)
+**损失组件：**
+- `L_gen`：completion token 上的交叉熵（与 SFT 相同）
+- `L_cls`：`cls_logits` 与 `cls_targets` 的 BCEWithLogits
+- `L_distill`：学生分数与 `teacher_prob` 之间的 KL 散度（temperature=2.0）
 
-This is a manual training loop (not Trainer), with gradient clipping at max_norm=1.0.
+这是一个手动训练循环（不是 Trainer），并使用 `max_norm=1.0` 做梯度裁剪。
 
 Output: `outputs/formal_<dataset>/cotrain/final_cotrain/adapter/` + `cls_head.pt`
 
-### Step 4: Evaluation
+### 步骤 4：评估
 
-Three evaluation modes plus faithfulness metrics, all run against the **test** evidence parquet:
+三种评估模式加上 faithfulness 指标，全部针对 **test** evidence parquet 运行：
 
-| Mode | How it works | Output |
+| 模式 | 工作方式 | 输出 |
 |------|-------------|--------|
 | `gen_only` | Model generates text, parse JSON `score` field | AUROC, AUPRC, F1, parse_rate, format_correct_rate |
 | `head_only` | LLM forward -> last hidden -> cls_head -> sigmoid | AUROC, AUPRC, F1 |
 | `fusion` | `p = alpha * p_cls + (1-alpha) * p_teacher`, alpha optimized on validation | AUROC, AUPRC, F1, best_alpha |
 
-Alpha is selected once on validation data, then fixed for test. Never tuned on test.
+Alpha 只在验证集上选择一次，然后在测试集上固定使用。绝不在测试集上调参。
 
-**Faithfulness metrics:**
-- **Sufficiency**: how much better does the model predict with the full evidence card vs no evidence?
-- **Comprehensiveness**: how much does prediction quality drop when evidence is removed?
-- **Evidence-ablation**: per-feature impact analysis
+**Faithfulness 指标：**
+- **Sufficiency**：使用完整 evidence card 与不使用 evidence 时，模型预测提升了多少？
+- **Comprehensiveness**：移除 evidence 后，预测质量下降了多少？
+- **Evidence-ablation**：按特征分析影响
 
 ---
 
-## Loss Function
+## 损失函数
 
 $$\mathcal{L} = \mathcal{L}_{gen} + \lambda_1 \cdot \mathcal{L}_{cls} + \lambda_2 \cdot \mathcal{L}_{distill}$$
 
-| Component | What | Default Weight |
+| 组件 | 含义 | 默认权重 |
 |-----------|------|---------------|
 | `L_gen` | CE on generated JSON tokens | 1.0 |
 | `L_cls` | BCE from cls_head on last-token hidden state | 0.1 |
 | `L_distill` | KL divergence vs teacher soft score (temp=2.0) | 0.1 |
 
-Stage 1 (SFT) uses only `L_gen`. Stage 2 (CoTrain) uses all three.
+阶段 1（SFT）只使用 `L_gen`。阶段 2（CoTrain）使用全部三项。
 
 ---
 
-## Quick Start
+## 快速开始
 
-### Environment
+### 环境
 
 ```bash
-# Using conda (recommended)
+# 使用 conda（推荐）
 conda activate /data1/mq/conda_envs/priorfgnn
-# Or: export PATH="/data1/mq/conda_envs/priorfgnn/bin:$PATH"
+# 或：export PATH="/data1/mq/conda_envs/priorfgnn/bin:$PATH"
 
 export CUDA_VISIBLE_DEVICES=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ```
 
-### Smoke Test (< 1 min)
+### 烟雾测试（< 1 分钟）
 
 ```bash
 bash priorf_reasoner_slm/scripts/run_smoke.sh
 ```
 
-Checks: Python env, module imports, config files, data collators, eval metrics.
+检查项：Python 环境、模块导入、配置文件、data collator、评估指标。
 
-### Full Pipeline (per-dataset)
+### 完整流水线（按数据集）
 
 ```bash
-# Both datasets
+# 两个数据集都跑
 GPU_ID=1 bash priorf_reasoner_slm/scripts/run_full_pipeline.sh
 
-# Single dataset only
+# 只跑单个数据集
 DATASETS=amazon GPU_ID=1 bash priorf_reasoner_slm/scripts/run_full_pipeline.sh
 ```
 
-This runs: smoke test -> SFT -> CoTrain -> eval, per dataset independently.
+执行顺序：烟雾测试 -> SFT -> CoTrain -> eval，且按数据集独立进行。
 
-### Training Only
+### 仅训练
 
 ```bash
 export MODEL_NAME=/data1/mq/models/Qwen3-4B-Instruct-2507
@@ -253,7 +253,7 @@ export STAGE2_OUTPUT=outputs/formal_amazon/cotrain
 bash priorf_reasoner_slm/scripts/run_train_qwen4b.sh
 ```
 
-### Evaluation Only
+### 仅评估
 
 ```bash
 export ADAPTER_PATH=outputs/formal_amazon/cotrain/final_cotrain/adapter
@@ -264,9 +264,9 @@ export EVAL_OUTPUT=outputs/formal_amazon/eval
 bash priorf_reasoner_slm/scripts/run_eval.sh
 ```
 
-### Continue After SFT
+### SFT 后继续运行
 
-If SFT has completed and you want to run CoTrain + eval:
+如果 SFT 已完成，并且你想运行 CoTrain + eval：
 
 ```bash
 DATASET=amazon bash priorf_reasoner_slm/scripts/run_after_sft.sh
@@ -274,9 +274,9 @@ DATASET=amazon bash priorf_reasoner_slm/scripts/run_after_sft.sh
 
 ---
 
-## Monitoring Training
+## 训练监控
 
-### TensorBoard (SFT stage)
+### TensorBoard（SFT 阶段）
 
 SFT logs to TensorBoard automatically (`report_to: [tensorboard]`):
 
@@ -284,9 +284,9 @@ SFT logs to TensorBoard automatically (`report_to: [tensorboard]`):
 tensorboard --logdir outputs/formal_amazon/sft/runs --port 6006
 ```
 
-Logged: `train/loss` every 10 steps, `train/learning_rate`.
+记录内容：每 10 步记录一次 `train/loss` 和 `train/learning_rate`。
 
-### CoTrain stage
+### CoTrain 阶段
 
 CoTrain uses a manual training loop, prints to stdout every 10 steps:
 
@@ -295,7 +295,7 @@ Step 100 | loss=2.4521 | gen=2.1234 | cls=0.6812 | dist=0.0475
 Epoch 1/3 | loss=2.3100 | gen=2.0100 | cls=0.6200 | dist=0.0400
 ```
 
-### GPU monitoring
+### GPU 监控
 
 ```bash
 watch -n 5 nvidia-smi
@@ -303,7 +303,7 @@ watch -n 5 nvidia-smi
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 PriorF-Reasoner/
@@ -363,18 +363,18 @@ PriorF-Reasoner/
 
 ---
 
-## Datasets
+## 数据集
 
-| Dataset | Nodes | Features | Relations | Anomaly Rate |
+| 数据集 | 节点数 | 特征数 | 关系 | 异常率 |
 |---------|-------|----------|-----------|-------------|
 | Amazon  | 11,944| 25       | UPU, USU, UVU | ~6.9% |
 | YelpChi | 45,954| 32       | RUR, RTR, RSR | ~14.5% |
 
 ---
 
-## Key Configuration
+## 关键配置
 
-| Parameter | Default |
+| 参数 | 默认值 |
 |-----------|---------|
 | Base model | Qwen3-4B (local) |
 | LoRA rank / alpha | 16 / 32 |
@@ -392,51 +392,51 @@ PriorF-Reasoner/
 
 ---
 
-## Acceptance Criteria
+## 验收标准
 
-1. Teacher export aligns with PriorF-GNN baseline (Amazon ~0.982/0.901, YelpChi ~0.952/0.836)
-2. `gen_only` significantly better than random/majority class
-3. `head_only` at least approaches teacher, no collapse
-4. `fusion` not weaker than teacher on at least one main metric, no significant degradation on the other
-5. JSON parse rate >= 95%
-6. Faithfulness metrics (sufficiency, comprehensiveness) output normally
+1. 教师导出结果与 PriorF-GNN 基线一致（Amazon 约 0.982/0.901，YelpChi 约 0.952/0.836）
+2. `gen_only` 明显优于随机/多数类
+3. `head_only` 至少接近教师模型，且不崩溃
+4. `fusion` 在至少一个主指标上不弱于教师模型，另一个指标也无明显退化
+5. JSON 解析率 >= 95%
+6. Faithfulness 指标（sufficiency、comprehensiveness）可正常输出
 
 ---
 
-## Installation
+## 安装
 
 ```bash
-# Using conda (recommended)
+# 使用 conda（推荐）
 conda create -n priorfgnn python=3.10
 conda activate priorfgnn
 
-# PyTorch (match your CUDA version from pytorch.org)
+# PyTorch（请根据 pytorch.org 匹配你的 CUDA 版本）
 pip install torch torchvision torchaudio
 
-# Core dependencies
+# 核心依赖
 pip install -U transformers accelerate datasets peft trl safetensors
 pip install -U scipy scikit-learn pandas pyarrow pydantic
 
 # PyG
 pip install -U torch_geometric
 
-# Optional: FlashAttention (CUDA 12+, Ampere/Ada/Hopper GPU)
+# 可选：FlashAttention（CUDA 12+，Ampere/Ada/Hopper GPU）
 pip install flash-attn --no-build-isolation
 ```
 
 ---
 
-## Tests
+## 测试
 
 ```bash
 python -m pytest priorf_reasoner_slm/tests/ -q
 ```
 
-183 tests covering: mat_loader, teacher export, evidence schema, dataset builder, tokenization, losses, collators, model forward, eval metrics.
+183 个测试覆盖：mat_loader、teacher export、evidence schema、dataset builder、tokenization、losses、collators、模型前向、评估指标。
 
 ---
 
-## Citation
+## 引用
 
 ```bibtex
 @inproceedings{priorf2026,
