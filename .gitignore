@@ -54,3 +54,6 @@ outputs/
 .codex
 .claude/
 datasets/*.mat
+
+# outputs
+outputs/
